@@ -9,6 +9,10 @@
   <script src="https://cdn.jsdelivr.net/npm/aframe-event-set-component@5.0.0/dist/aframe-event-set-component.min.js"></script>
 </head>
 <body>
+  <!-- Video camera AR (behind the canvas) -->
+  <video id="ar-camera-feed" autoplay playsinline webkit-playsinline
+    style="position:fixed;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:-1;display:none;"></video>
+
   <!-- Debug overlay -->
   <div id="debug-log" style="position:fixed;top:0;left:0;width:100%;max-height:40%;overflow-y:auto;background:rgba(0,0,0,0.85);color:#0f0;font:12px monospace;padding:8px;z-index:99999;pointer-events:none;"></div>
   <script>
@@ -38,7 +42,7 @@
 
   <a-scene
     vr-mode-ui="enabled: false"
-    renderer="antialias: true; colorManagement: true"
+    renderer="antialias: true; colorManagement: true; alpha: true"
     cursor-manager
     gyro-fallback
     cardboard-stereo
@@ -210,6 +214,9 @@
   <!-- Bouton FAB (sidebar droite ChatApp2) -->
   <button id="fab-trigger-btn" onclick="window.fabMenu && window.fabMenu.open()">⭐</button>
 
+  <!-- Bouton MODE AR -->
+  <button id="ar-btn">MODE AR</button>
+
   <!-- Bouton MODE VR -->
   <button id="vr-stereo-btn">MODE VR</button>
   <div id="stereo-divider"></div>
@@ -223,11 +230,12 @@
   </div>
 
   <!-- Scripts -->
-  <script src="js/cardboard.js?v=1"></script>
-  <script src="js/components.js?v=1"></script>
-  <script src="js/file-explorer.js?v=1"></script>
-  <script src="js/media-player.js?v=1"></script>
-  <script src="js/fab-menu.js?v=1"></script>
-  <script src="js/app.js?v=1"></script>
+  <script src="js/cardboard.js?v=2"></script>
+  <script src="js/components.js?v=2"></script>
+  <script src="js/file-explorer.js?v=2"></script>
+  <script src="js/media-player.js?v=2"></script>
+  <script src="js/fab-menu.js?v=2"></script>
+  <script src="js/ar-mode.js?v=2"></script>
+  <script src="js/app.js?v=2"></script>
 </body>
 </html>
