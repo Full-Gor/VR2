@@ -32,10 +32,36 @@ AFRAME.registerComponent('cardboard-stereo', {
     btn.classList.add('active');
     divider.style.display = 'block';
 
-    // Créer le StereoEffect Three.js (version custom avec support AR)
-    this.effect = new THREE.StereoEffectAR(this.renderer);
+    // Sauvegarder le vrai renderer.render AVANT de créer StereoEffect
+    this._origRender = this.renderer.render.bind(this.renderer);
+
+    // Créer le StereoEffect Three.js — lui passe le vrai render
+    this.effect = new THREE.StereoEffect(this.renderer, this._origRender);
     this.effect.setSize(window.innerWidth, window.innerHeight);
     this.effect.setEyeSeparation(0.064);
+
+    // BLOQUER le rendu mono d'A-Frame en remplaçant renderer.render par un no-op
+    // Seul notre tick() fera le rendu via StereoEffect
+    this.renderer.render = function () {};
+
+    // Si AR actif, forcer la transparence du renderer pour voir la caméra derrière
+    if (this._arWasActive) {
+      // Dupliquer la vidéo AR en stéréo (2 moitiés côte à côte)
+      var videoEl = document.getElementById('ar-camera-feed');
+      if (videoEl) {
+        videoEl.style.display = 'block';
+        videoEl.style.width = '50%';
+        videoEl.style.left = '0';
+        // Créer un clone pour l'oeil droit
+        var clone = videoEl.cloneNode(false);
+        clone.id = 'ar-camera-feed-right';
+        clone.srcObject = videoEl.srcObject;
+        clone.style.left = '50%';
+        clone.style.width = '50%';
+        clone.play().catch(function(){});
+        document.body.appendChild(clone);
+      }
+    }
 
     // Demander la permission gyroscope (nécessaire sur iOS 13+ et certains Android)
     this.requestGyroPermission();
@@ -106,7 +132,7 @@ AFRAME.registerComponent('cardboard-stereo', {
     };
     window.addEventListener('resize', this._onResize);
 
-    // Si AR actif, cacher sky/sol (le fond sera le flux camera rendu dans WebGL)
+    // Si AR actif, cacher sky/sol
     if (this._arWasActive) {
       var sky = document.querySelector('a-sky');
       if (sky) sky.setAttribute('visible', false);
@@ -116,9 +142,6 @@ AFRAME.registerComponent('cardboard-stereo', {
 
     // Désactiver WebXR natif d'A-Frame
     this.el.renderer.xr.enabled = false;
-
-    // On ne touche PAS a renderer.render ici.
-    // ar-background-renderer gere deja le blocage du rendu mono quand stereo est actif.
 
     this.el.emit('vr-mode-enter');
 
@@ -137,16 +160,31 @@ AFRAME.registerComponent('cardboard-stereo', {
     btn.classList.remove('active');
     divider.style.display = 'none';
 
+    // RESTAURER le vrai renderer.render
+    if (this._origRender) {
+      this.renderer.render = this._origRender;
+      this._origRender = null;
+    }
+
     this.effect = null;
     btn.style.display = 'block';
+
+    // Supprimer le clone video AR droit
+    var cloneVideo = document.getElementById('ar-camera-feed-right');
+    if (cloneVideo) cloneVideo.parentNode.removeChild(cloneVideo);
+
+    // Restaurer la video AR en plein ecran si elle etait active
+    var videoEl = document.getElementById('ar-camera-feed');
+    if (videoEl && this._arWasActive) {
+      videoEl.style.width = '100%';
+      videoEl.style.left = '0';
+    }
 
     // Restaurer les boutons UI
     var arBtn = document.getElementById('ar-btn');
     if (arBtn) arBtn.style.display = 'block';
     var fabTrigger = document.getElementById('fab-trigger-btn');
     if (fabTrigger) fabTrigger.style.display = 'flex';
-
-    // Pas besoin de restaurer renderer.render, on ne l'a pas modifie
 
     if (this._onTripleTap) {
       document.removeEventListener('touchend', this._onTripleTap);
@@ -206,9 +244,6 @@ AFRAME.registerComponent('cardboard-stereo', {
   tick: function () {
     if (!this.stereoActive || !this.effect) return;
 
-    var origRender = window._origRender;
-    if (!origRender) return;
-
     var threeScene = this.el.object3D;
     var camera = this.el.camera;
     if (!threeScene || !camera) return;
@@ -219,8 +254,8 @@ AFRAME.registerComponent('cardboard-stereo', {
     var savedProjection = camera.projectionMatrix.clone();
     var savedPosition = camera.position.clone();
 
-    // Le StereoEffectAR gere le rendu AR + scene 3D dans chaque oeil
-    this.effect.render(threeScene, camera, !!(window.arMode && window.arMode.isActive()));
+    // Rendu stereo (utilise le vrai render en interne)
+    this.effect.render(threeScene, camera);
 
     // Restaurer les matrices originales pour le raycaster
     camera.position.copy(savedPosition);
@@ -263,16 +298,17 @@ AFRAME.registerComponent('cardboard-stereo', {
   }
 });
 
-/* ===== THREE.StereoEffectAR ===== */
-// Version custom qui supporte le rendu du fond camera AR dans chaque oeil
-// AVANT de rendre la scene 3D
+/* ===== THREE.StereoEffect ===== */
+// Rendu stereo split-screen standard
+// Accepte un 2e argument : le vrai renderer.render (pour bypasser le no-op)
 
-THREE.StereoEffectAR = function (renderer) {
+THREE.StereoEffect = function (renderer, realRender) {
   var _stereo = new THREE.StereoCamera();
   _stereo.aspect = 0.5;
   _stereo.eyeSep = 0.064;
 
   var _size = new THREE.Vector2();
+  var _realRender = realRender || renderer.render.bind(renderer);
 
   this.setEyeSeparation = function (eyeSep) {
     _stereo.eyeSep = eyeSep;
@@ -282,7 +318,7 @@ THREE.StereoEffectAR = function (renderer) {
     renderer.setSize(width, height);
   };
 
-  this.render = function (scene, camera, arActive) {
+  this.render = function (scene, camera) {
     if (scene.matrixWorldAutoUpdate === true) scene.updateMatrixWorld();
     if (camera.parent === null && camera.matrixWorldAutoUpdate === true) camera.updateMatrixWorld();
 
@@ -290,11 +326,15 @@ THREE.StereoEffectAR = function (renderer) {
 
     renderer.getSize(_size);
 
-    // Clear une seule fois au debut
+    // Si AR actif, forcer transparence avant le clear
+    var arOn = window.arMode && window.arMode.isActive();
+    if (arOn) {
+      renderer.setClearColor(0x000000, 0);
+      renderer.setClearAlpha(0);
+    }
+
     if (renderer.autoClear) renderer.clear();
 
-    // IMPORTANT : desactiver autoClear pour que renderer.render() ne re-efface pas
-    // le fond AR qu'on vient de dessiner
     var savedAutoClear = renderer.autoClear;
     renderer.autoClear = false;
 
@@ -305,31 +345,15 @@ THREE.StereoEffectAR = function (renderer) {
     // === OEIL GAUCHE ===
     renderer.setScissor(0, 0, halfW, _size.height);
     renderer.setViewport(0, 0, halfW, _size.height);
-
-    // D'abord le fond camera AR (si actif)
-    if (arActive && window.arMode && window.arMode.renderBackground) {
-      window.arMode.renderBackground(renderer, 0, 0, halfW, _size.height);
-    }
-
-    // Puis la scene 3D par-dessus (utiliser origRender pour bypass le hook)
-    var origRender = window._origRender || renderer.render.bind(renderer);
-    origRender(scene, _stereo.cameraL);
+    _realRender(scene, _stereo.cameraL);
 
     // === OEIL DROIT ===
     renderer.setScissor(halfW, 0, halfW, _size.height);
     renderer.setViewport(halfW, 0, halfW, _size.height);
-
-    // D'abord le fond camera AR
-    if (arActive && window.arMode && window.arMode.renderBackground) {
-      window.arMode.renderBackground(renderer, halfW, 0, halfW, _size.height);
-    }
-
-    // Puis la scene 3D
-    origRender(scene, _stereo.cameraR);
+    _realRender(scene, _stereo.cameraR);
 
     renderer.setScissorTest(false);
 
-    // Restaurer autoClear
     renderer.autoClear = savedAutoClear;
   };
 };
