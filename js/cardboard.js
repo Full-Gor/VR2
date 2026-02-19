@@ -99,6 +99,12 @@ AFRAME.registerComponent('cardboard-stereo', {
     };
     window.addEventListener('resize', this._onResize);
 
+    // Si AR est actif, garder la transparence du renderer
+    if (window.arMode && window.arMode.isActive()) {
+      this.renderer.setClearColor(0x000000, 0);
+      this.renderer.setClearAlpha(0);
+    }
+
     // Désactiver WebXR natif d'A-Frame
     this.el.renderer.xr.enabled = false;
 
@@ -152,6 +158,12 @@ AFRAME.registerComponent('cardboard-stereo', {
     // Restaurer la taille du renderer
     this.renderer.setSize(window.innerWidth, window.innerHeight);
 
+    // Si AR est toujours actif, garder la transparence
+    if (window.arMode && window.arMode.isActive()) {
+      this.renderer.setClearColor(0x000000, 0);
+      this.renderer.setClearAlpha(0);
+    }
+
     // Quitter le plein écran
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
@@ -197,20 +209,31 @@ AFRAME.registerComponent('cardboard-stereo', {
     const threeScene = this.el.object3D;
     const camera = this.el.camera;
     if (threeScene && camera) {
+      // Si AR actif, forcer la transparence du renderer a chaque frame
+      if (window.arMode && window.arMode.isActive()) {
+        this.renderer.setClearColor(0x000000, 0);
+        this.renderer.setClearAlpha(0);
+      }
+
       // Sauvegarder la matrice de la caméra avant le rendu stéréo
       const savedMatrix = camera.matrixWorld.clone();
+      const savedMatrixInverse = camera.matrixWorldInverse.clone();
       const savedProjection = camera.projectionMatrix.clone();
+      const savedPosition = camera.position.clone();
 
       this._renderingFromStereo = true;
       this.effect.render(threeScene, camera);
       this._renderingFromStereo = false;
 
       // Restaurer les matrices originales pour le raycaster
+      camera.position.copy(savedPosition);
       camera.matrixWorld.copy(savedMatrix);
+      camera.matrixWorldInverse.copy(savedMatrixInverse);
       camera.projectionMatrix.copy(savedProjection);
 
       // Restaurer le viewport normal pour le raycaster A-Frame
       this.renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
+      this.renderer.setScissorTest(false);
     }
   },
 

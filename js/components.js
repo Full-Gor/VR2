@@ -36,8 +36,15 @@ AFRAME.registerComponent('cursor-manager', {
     this.vrMode = true;
     var cursor = document.getElementById('gaze-cursor');
     if (cursor) {
-      cursor.setAttribute('cursor', { fuse: true, fuseTimeout: 1500, rayOrigin: 'entity' });
-      cursor.setAttribute('visible', true);
+      // Forcer la suppression et re-creation du composant cursor pour un refresh complet
+      cursor.removeAttribute('cursor');
+      cursor.removeAttribute('raycaster');
+      // Petit delai pour laisser A-Frame nettoyer
+      setTimeout(function () {
+        cursor.setAttribute('raycaster', { objects: '.clickable', far: 15 });
+        cursor.setAttribute('cursor', { fuse: true, fuseTimeout: 1500, rayOrigin: 'entity' });
+        cursor.setAttribute('visible', true);
+      }, 100);
     }
     var fuseRing = document.getElementById('fuse-progress');
     if (fuseRing) fuseRing.setAttribute('visible', true);
