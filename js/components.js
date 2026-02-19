@@ -1,10 +1,7 @@
 /* ===== COMPOSANTS A-FRAME DE BASE (SIMPLIFIE) ===== */
 
 // Rendu fond camera AR en mode non-stereo
-// Intercepte le render loop d'A-Frame pour :
-// 1. Faire le clear
-// 2. Dessiner le fond camera AR
-// 3. Rendre la scene 3D par-dessus (sans re-clear)
+// Hook unique sur renderer.render : gere AR mono (le stereo gere son propre rendu)
 AFRAME.registerComponent('ar-background-renderer', {
   init: function () {
     var sceneEl = this.el.sceneEl;
@@ -13,30 +10,29 @@ AFRAME.registerComponent('ar-background-renderer', {
       var renderer = sceneEl.renderer;
       if (!renderer) return;
 
+      // Stocker la reference originale UNE SEULE FOIS
+      // cardboard.js lira cette meme ref via window._origRender
       var origRender = renderer.render.bind(renderer);
+      window._origRender = origRender;
+
       renderer.render = function (scene, camera) {
-        // Si AR actif ET pas en mode stereo
+        // Si AR actif ET pas en mode stereo => dessiner le fond camera
         var arActive = window.arMode && window.arMode.isActive();
         var stereoActive = window.cardboardStereo && window.cardboardStereo.isActive();
 
         if (arActive && !stereoActive) {
-          // Sauvegarder autoClear et le desactiver pour eviter que le render efface le fond AR
           var savedAutoClear = renderer.autoClear;
           if (renderer.autoClear) {
             renderer.clear();
             renderer.autoClear = false;
           }
-
-          // Dessiner le fond camera
           window.arMode.renderBackgroundFullscreen(renderer);
-
-          // Rendre la scene 3D par-dessus (sans clear)
           origRender(scene, camera);
-
-          // Restaurer
           renderer.autoClear = savedAutoClear;
+        } else if (stereoActive) {
+          // En mode stereo, le tick de cardboard-stereo gere tout
+          // Ne rien faire ici (bloquer le rendu mono d'A-Frame)
         } else {
-          // Rendu normal (ou le stereo gere tout)
           origRender(scene, camera);
         }
       };

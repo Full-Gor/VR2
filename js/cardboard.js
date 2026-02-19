@@ -117,16 +117,8 @@ AFRAME.registerComponent('cardboard-stereo', {
     // Désactiver WebXR natif d'A-Frame
     this.el.renderer.xr.enabled = false;
 
-    // Intercepter le rendu d'A-Frame : bloquer le rendu mono
-    this._originalRender = this.el.renderer.render.bind(this.el.renderer);
-    this._skipNormalRender = true;
-    const self = this;
-    const origRender = this._originalRender;
-    this.el.renderer.render = function (scene, camera) {
-      if (self._skipNormalRender && self._renderingFromStereo) {
-        origRender(scene, camera);
-      }
-    };
+    // On ne touche PAS a renderer.render ici.
+    // ar-background-renderer gere deja le blocage du rendu mono quand stereo est actif.
 
     this.el.emit('vr-mode-enter');
 
@@ -154,12 +146,7 @@ AFRAME.registerComponent('cardboard-stereo', {
     var fabTrigger = document.getElementById('fab-trigger-btn');
     if (fabTrigger) fabTrigger.style.display = 'flex';
 
-    // Restaurer le render normal d'A-Frame
-    this._skipNormalRender = false;
-    this._renderingFromStereo = false;
-    if (this._originalRender) {
-      this.el.renderer.render = this._originalRender;
-    }
+    // Pas besoin de restaurer renderer.render, on ne l'a pas modifie
 
     if (this._onTripleTap) {
       document.removeEventListener('touchend', this._onTripleTap);
@@ -217,7 +204,10 @@ AFRAME.registerComponent('cardboard-stereo', {
   },
 
   tick: function () {
-    if (!this.stereoActive || !this.effect || !this._originalRender) return;
+    if (!this.stereoActive || !this.effect) return;
+
+    var origRender = window._origRender;
+    if (!origRender) return;
 
     var threeScene = this.el.object3D;
     var camera = this.el.camera;
@@ -229,12 +219,8 @@ AFRAME.registerComponent('cardboard-stereo', {
     var savedProjection = camera.projectionMatrix.clone();
     var savedPosition = camera.position.clone();
 
-    this._renderingFromStereo = true;
-
     // Le StereoEffectAR gere le rendu AR + scene 3D dans chaque oeil
     this.effect.render(threeScene, camera, !!(window.arMode && window.arMode.isActive()));
-
-    this._renderingFromStereo = false;
 
     // Restaurer les matrices originales pour le raycaster
     camera.position.copy(savedPosition);
@@ -325,8 +311,9 @@ THREE.StereoEffectAR = function (renderer) {
       window.arMode.renderBackground(renderer, 0, 0, halfW, _size.height);
     }
 
-    // Puis la scene 3D par-dessus
-    renderer.render(scene, _stereo.cameraL);
+    // Puis la scene 3D par-dessus (utiliser origRender pour bypass le hook)
+    var origRender = window._origRender || renderer.render.bind(renderer);
+    origRender(scene, _stereo.cameraL);
 
     // === OEIL DROIT ===
     renderer.setScissor(halfW, 0, halfW, _size.height);
@@ -338,7 +325,7 @@ THREE.StereoEffectAR = function (renderer) {
     }
 
     // Puis la scene 3D
-    renderer.render(scene, _stereo.cameraR);
+    origRender(scene, _stereo.cameraR);
 
     renderer.setScissorTest(false);
 
