@@ -1,5 +1,49 @@
 /* ===== COMPOSANTS A-FRAME DE BASE (SIMPLIFIE) ===== */
 
+// Rendu fond camera AR en mode non-stereo
+// Intercepte le render loop d'A-Frame pour :
+// 1. Faire le clear
+// 2. Dessiner le fond camera AR
+// 3. Rendre la scene 3D par-dessus (sans re-clear)
+AFRAME.registerComponent('ar-background-renderer', {
+  init: function () {
+    var sceneEl = this.el.sceneEl;
+
+    sceneEl.addEventListener('loaded', function () {
+      var renderer = sceneEl.renderer;
+      if (!renderer) return;
+
+      var origRender = renderer.render.bind(renderer);
+      renderer.render = function (scene, camera) {
+        // Si AR actif ET pas en mode stereo
+        var arActive = window.arMode && window.arMode.isActive();
+        var stereoActive = window.cardboardStereo && window.cardboardStereo.isActive();
+
+        if (arActive && !stereoActive) {
+          // Sauvegarder autoClear et le desactiver pour eviter que le render efface le fond AR
+          var savedAutoClear = renderer.autoClear;
+          if (renderer.autoClear) {
+            renderer.clear();
+            renderer.autoClear = false;
+          }
+
+          // Dessiner le fond camera
+          window.arMode.renderBackgroundFullscreen(renderer);
+
+          // Rendre la scene 3D par-dessus (sans clear)
+          origRender(scene, camera);
+
+          // Restaurer
+          renderer.autoClear = savedAutoClear;
+        } else {
+          // Rendu normal (ou le stereo gere tout)
+          origRender(scene, camera);
+        }
+      };
+    });
+  }
+});
+
 // Gyroscope fallback
 AFRAME.registerComponent('gyro-fallback', {
   init: function () {

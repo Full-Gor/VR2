@@ -9,6 +9,12 @@ AFRAME.registerComponent('cardboard-stereo', {
 
     const btn = document.getElementById('vr-stereo-btn');
     const divider = document.getElementById('stereo-divider');
+    const self = this;
+
+    // API publique pour que ar-mode.js puisse verifier l'etat
+    window.cardboardStereo = {
+      isActive: function () { return self.stereoActive; }
+    };
 
     btn.addEventListener('click', () => {
       if (this.stereoActive) {
@@ -26,21 +32,21 @@ AFRAME.registerComponent('cardboard-stereo', {
     btn.classList.add('active');
     divider.style.display = 'block';
 
-    // Créer le StereoEffect Three.js
-    this.effect = new THREE.StereoEffect(this.renderer);
+    // Créer le StereoEffect Three.js (version custom avec support AR)
+    this.effect = new THREE.StereoEffectAR(this.renderer);
     this.effect.setSize(window.innerWidth, window.innerHeight);
-    this.effect.setEyeSeparation(0.064); // 64mm = écart pupillaire moyen
+    this.effect.setEyeSeparation(0.064);
 
     // Demander la permission gyroscope (nécessaire sur iOS 13+ et certains Android)
     this.requestGyroPermission();
 
-    // IMPORTANT: Forcer la réactivation du gyroscope pour le mode VR cardboard
+    // Forcer le gyroscope
     var camera = document.querySelector('a-camera');
     if (camera) {
       camera.setAttribute('look-controls', 'magicWindowTrackingEnabled', true);
     }
 
-    // Vérifier après un court délai si le gyroscope fonctionne vraiment
+    // Vérifier après un court délai si le gyroscope fonctionne
     this._gyroCheckTimeout = setTimeout(() => {
       this._vrGyroWorking = false;
       var checkHandler = (e) => {
@@ -54,7 +60,7 @@ AFRAME.registerComponent('cardboard-stereo', {
       setTimeout(() => {
         window.removeEventListener('deviceorientation', checkHandler);
         if (!this._vrGyroWorking && this.stereoActive) {
-          console.warn('VR Cardboard: gyroscope non detecte ! Utilisez HTTPS (port 9443) pour le gyroscope.');
+          console.warn('VR Cardboard: gyroscope non detecte !');
           var warn = document.createElement('div');
           warn.id = 'vr-gyro-warning';
           warn.style.cssText = 'position:fixed;bottom:10%;left:50%;transform:translateX(-50%);background:rgba(255,100,0,0.9);color:#fff;padding:15px 25px;border-radius:10px;font:bold 16px sans-serif;z-index:100000;text-align:center;pointer-events:none;';
@@ -68,7 +74,6 @@ AFRAME.registerComponent('cardboard-stereo', {
     // Demander le plein écran + orientation paysage
     this.requestFullscreen();
 
-    // Forcer le lock-screen en paysage
     if (screen.orientation && screen.orientation.lock) {
       screen.orientation.lock('landscape').catch(() => {});
     }
@@ -94,7 +99,6 @@ AFRAME.registerComponent('cardboard-stereo', {
     };
     document.addEventListener('touchend', this._onTripleTap);
 
-    // Écouter le resize
     this._onResize = () => {
       if (this.effect) {
         this.effect.setSize(window.innerWidth, window.innerHeight);
@@ -102,14 +106,8 @@ AFRAME.registerComponent('cardboard-stereo', {
     };
     window.addEventListener('resize', this._onResize);
 
-    // Si AR est actif, garder la transparence du renderer ET la caméra visible
+    // Si AR actif, cacher sky/sol (le fond sera le flux camera rendu dans WebGL)
     if (this._arWasActive) {
-      this.renderer.setClearColor(0x000000, 0);
-      this.renderer.setClearAlpha(0);
-      // S'assurer que le feed caméra AR reste visible derrière le canvas
-      var arFeed = document.getElementById('ar-camera-feed');
-      if (arFeed) arFeed.style.display = 'block';
-      // Garder sky/sol cachés
       var sky = document.querySelector('a-sky');
       if (sky) sky.setAttribute('visible', false);
       var floor = document.querySelector('a-scene > a-plane');
@@ -130,10 +128,9 @@ AFRAME.registerComponent('cardboard-stereo', {
       }
     };
 
-    // Signaler l'entrée en mode VR
     this.el.emit('vr-mode-enter');
 
-    // Recentrer le menu face à l'utilisateur à l'entrée en VR
+    // Recentrer
     setTimeout(() => {
       const recenterComp = document.getElementById('recenter-btn');
       if (recenterComp && recenterComp.components['recenter-button']) {
@@ -164,36 +161,34 @@ AFRAME.registerComponent('cardboard-stereo', {
       this.el.renderer.render = this._originalRender;
     }
 
-    // Retirer le listener triple-tap
     if (this._onTripleTap) {
       document.removeEventListener('touchend', this._onTripleTap);
     }
 
-    // Restaurer la taille du renderer
     this.renderer.setSize(window.innerWidth, window.innerHeight);
 
-    // Si AR était actif avant le VR, restaurer la transparence
+    // Si AR etait actif avant le VR, restaurer l'etat AR
     if (this._arWasActive && window.arMode && window.arMode.isActive()) {
       this.renderer.setClearColor(0x000000, 0);
       this.renderer.setClearAlpha(0);
-      // Garder sky/sol cachés
       var sky = document.querySelector('a-sky');
       if (sky) sky.setAttribute('visible', false);
       var floor = document.querySelector('a-scene > a-plane');
       if (floor) floor.setAttribute('visible', false);
-      // Mettre à jour le bouton AR
       if (arBtn) {
         arBtn.textContent = 'QUITTER AR';
         arBtn.classList.add('active');
       }
+    } else {
+      // Restaurer le renderer opaque si AR n'etait pas actif
+      this.renderer.setClearColor(0x000000, 1);
+      this.renderer.setClearAlpha(1);
     }
 
-    // Quitter le plein écran
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
     }
 
-    // Libérer l'orientation
     if (screen.orientation && screen.orientation.unlock) {
       screen.orientation.unlock();
     }
@@ -202,7 +197,6 @@ AFRAME.registerComponent('cardboard-stereo', {
       window.removeEventListener('resize', this._onResize);
     }
 
-    // Restaurer le gyro-fallback si le gyroscope ne marchait pas
     var gyroFallback = this.el.components['gyro-fallback'];
     if (gyroFallback && !gyroFallback.gyroWorking) {
       var camera = document.querySelector('a-camera');
@@ -211,71 +205,59 @@ AFRAME.registerComponent('cardboard-stereo', {
       }
     }
 
-    // Nettoyer le timeout de vérification gyro
     if (this._gyroCheckTimeout) {
       clearTimeout(this._gyroCheckTimeout);
     }
 
-    // Retirer l'avertissement gyro si présent
     var warn = document.getElementById('vr-gyro-warning');
     if (warn) warn.parentNode.removeChild(warn);
 
     this._arWasActive = false;
-
-    // Signaler la sortie du mode VR
     this.el.emit('vr-mode-exit');
   },
 
-  // Le rendu stéréo se fait dans tick(), pas dans l'intercepteur de render
-  // C'est cette approche qui fonctionne correctement avec A-Frame
   tick: function () {
     if (!this.stereoActive || !this.effect || !this._originalRender) return;
 
-    const threeScene = this.el.object3D;
-    const camera = this.el.camera;
-    if (threeScene && camera) {
-      // Si AR actif, forcer la transparence du renderer a chaque frame
-      if (window.arMode && window.arMode.isActive()) {
-        this.renderer.setClearColor(0x000000, 0);
-        this.renderer.setClearAlpha(0);
-      }
+    var threeScene = this.el.object3D;
+    var camera = this.el.camera;
+    if (!threeScene || !camera) return;
 
-      // Sauvegarder la matrice de la caméra avant le rendu stéréo
-      const savedMatrix = camera.matrixWorld.clone();
-      const savedMatrixInverse = camera.matrixWorldInverse.clone();
-      const savedProjection = camera.projectionMatrix.clone();
-      const savedPosition = camera.position.clone();
+    // Sauvegarder la matrice de la caméra avant le rendu stéréo
+    var savedMatrix = camera.matrixWorld.clone();
+    var savedMatrixInverse = camera.matrixWorldInverse.clone();
+    var savedProjection = camera.projectionMatrix.clone();
+    var savedPosition = camera.position.clone();
 
-      this._renderingFromStereo = true;
-      this.effect.render(threeScene, camera);
-      this._renderingFromStereo = false;
+    this._renderingFromStereo = true;
 
-      // Restaurer les matrices originales pour le raycaster
-      camera.position.copy(savedPosition);
-      camera.matrixWorld.copy(savedMatrix);
-      camera.matrixWorldInverse.copy(savedMatrixInverse);
-      camera.projectionMatrix.copy(savedProjection);
+    // Le StereoEffectAR gere le rendu AR + scene 3D dans chaque oeil
+    this.effect.render(threeScene, camera, !!(window.arMode && window.arMode.isActive()));
 
-      // Restaurer le viewport normal pour le raycaster A-Frame
-      this.renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
-      this.renderer.setScissorTest(false);
-    }
+    this._renderingFromStereo = false;
+
+    // Restaurer les matrices originales pour le raycaster
+    camera.position.copy(savedPosition);
+    camera.matrixWorld.copy(savedMatrix);
+    camera.matrixWorldInverse.copy(savedMatrixInverse);
+    camera.projectionMatrix.copy(savedProjection);
+
+    // Restaurer le viewport normal pour le raycaster A-Frame
+    this.renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
+    this.renderer.setScissorTest(false);
   },
 
   requestGyroPermission: function () {
-    // iOS 13+ requiert une permission explicite
     if (typeof DeviceOrientationEvent !== 'undefined' &&
         typeof DeviceOrientationEvent.requestPermission === 'function') {
       DeviceOrientationEvent.requestPermission()
         .then(response => {
           if (response === 'granted') {
             console.log('Gyroscope: permission accordée');
-            // Forcer la réactivation du suivi après obtention de la permission
             var camera = document.querySelector('a-camera');
             if (camera) {
               camera.setAttribute('look-controls', 'magicWindowTrackingEnabled', true);
             }
-            // Mettre à jour le flag gyro-fallback
             var gyroFallback = this.el.components['gyro-fallback'];
             if (gyroFallback) {
               gyroFallback.gyroWorking = true;
@@ -287,24 +269,24 @@ AFRAME.registerComponent('cardboard-stereo', {
   },
 
   requestFullscreen: function () {
-    const el = document.documentElement;
-    const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+    var el = document.documentElement;
+    var rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
     if (rfs) {
       rfs.call(el).catch(() => {});
     }
   }
 });
 
-/* ===== THREE.StereoEffect ===== */
-// Implémentation standard du StereoEffect pour Three.js
-// (pas inclus nativement dans le build A-Frame)
+/* ===== THREE.StereoEffectAR ===== */
+// Version custom qui supporte le rendu du fond camera AR dans chaque oeil
+// AVANT de rendre la scene 3D
 
-THREE.StereoEffect = function (renderer) {
-  const _stereo = new THREE.StereoCamera();
+THREE.StereoEffectAR = function (renderer) {
+  var _stereo = new THREE.StereoCamera();
   _stereo.aspect = 0.5;
   _stereo.eyeSep = 0.064;
 
-  const _size = new THREE.Vector2();
+  var _size = new THREE.Vector2();
 
   this.setEyeSeparation = function (eyeSep) {
     _stereo.eyeSep = eyeSep;
@@ -314,7 +296,7 @@ THREE.StereoEffect = function (renderer) {
     renderer.setSize(width, height);
   };
 
-  this.render = function (scene, camera) {
+  this.render = function (scene, camera, arActive) {
     if (scene.matrixWorldAutoUpdate === true) scene.updateMatrixWorld();
     if (camera.parent === null && camera.matrixWorldAutoUpdate === true) camera.updateMatrixWorld();
 
@@ -322,19 +304,45 @@ THREE.StereoEffect = function (renderer) {
 
     renderer.getSize(_size);
 
+    // Clear une seule fois au debut
     if (renderer.autoClear) renderer.clear();
+
+    // IMPORTANT : desactiver autoClear pour que renderer.render() ne re-efface pas
+    // le fond AR qu'on vient de dessiner
+    var savedAutoClear = renderer.autoClear;
+    renderer.autoClear = false;
+
     renderer.setScissorTest(true);
 
-    // Œil gauche
-    renderer.setScissor(0, 0, _size.width / 2, _size.height);
-    renderer.setViewport(0, 0, _size.width / 2, _size.height);
+    var halfW = _size.width / 2;
+
+    // === OEIL GAUCHE ===
+    renderer.setScissor(0, 0, halfW, _size.height);
+    renderer.setViewport(0, 0, halfW, _size.height);
+
+    // D'abord le fond camera AR (si actif)
+    if (arActive && window.arMode && window.arMode.renderBackground) {
+      window.arMode.renderBackground(renderer, 0, 0, halfW, _size.height);
+    }
+
+    // Puis la scene 3D par-dessus
     renderer.render(scene, _stereo.cameraL);
 
-    // Œil droit
-    renderer.setScissor(_size.width / 2, 0, _size.width / 2, _size.height);
-    renderer.setViewport(_size.width / 2, 0, _size.width / 2, _size.height);
+    // === OEIL DROIT ===
+    renderer.setScissor(halfW, 0, halfW, _size.height);
+    renderer.setViewport(halfW, 0, halfW, _size.height);
+
+    // D'abord le fond camera AR
+    if (arActive && window.arMode && window.arMode.renderBackground) {
+      window.arMode.renderBackground(renderer, halfW, 0, halfW, _size.height);
+    }
+
+    // Puis la scene 3D
     renderer.render(scene, _stereo.cameraR);
 
     renderer.setScissorTest(false);
+
+    // Restaurer autoClear
+    renderer.autoClear = savedAutoClear;
   };
 };
