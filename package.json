@@ -1,0 +1,11 @@
+{
+  "name": "casque-vr",
+  "version": "1.0.0",
+  "description": "Interface VR pour casques bas de gamme - Explorateur de fichiers, navigateur web, hand tracking via caméra",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "author": "Arnaud",
+  "license": "MIT"
+}

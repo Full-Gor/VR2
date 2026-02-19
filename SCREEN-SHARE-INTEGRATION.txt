@@ -1,0 +1,116 @@
+===== NOTES D'INTEGRATION SCREEN SHARE (PC -> Mobile VR) =====
+
+Fichiers deja presents (non-trackes, survivent au git stash) :
+- screen-share.html    : Page PC pour partager l'ecran (getDisplayMedia + WebRTC)
+- js/screen-share.js   : Composant VR viewer (recoit le flux WebRTC et l'affiche)
+
+===== CODE A AJOUTER DANS server/server.js =====
+
+1) Ajouter le store de signaling (avant handleRequest) :
+
+    // === Signaling WebRTC pour screen sharing ===
+    var signalStore = { pc: [], vr: [] };
+
+2) Ajouter les routes dans handleRequest (dans le bloc if/else des routes API) :
+
+    } else if (pathname === '/api/signal') {
+      if (req.method === 'POST') {
+        handleSignalPost(req, res);
+      } else {
+        handleSignalGet(parsedUrl.query, res);
+      }
+    } else if (pathname === '/api/signal/reset') {
+      signalStore = { pc: [], vr: [] };
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{"ok":true}');
+    }
+
+3) Ajouter les fonctions de signaling :
+
+    // WebRTC signaling - stocker un message pour l'autre pair
+    function handleSignalPost(req, res) {
+      var body = '';
+      req.on('data', function (chunk) { body += chunk; });
+      req.on('end', function () {
+        try {
+          var data = JSON.parse(body);
+          var target = data.target; // 'pc' ou 'vr'
+          if (signalStore[target]) {
+            signalStore[target].push(data);
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end('{"ok":true}');
+        } catch (e) {
+          res.writeHead(400);
+          res.end('Bad request');
+        }
+      });
+    }
+
+    // WebRTC signaling - recuperer les messages en attente
+    function handleSignalGet(query, res) {
+      var role = query.role; // 'pc' ou 'vr'
+      var messages = signalStore[role] || [];
+      signalStore[role] = [];
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(messages));
+    }
+
+===== CODE A AJOUTER DANS js/app.js =====
+
+1) Dans le switch de initMenuActions, ajouter le case :
+
+      case 'screen-share':
+        openScreenShare();
+        break;
+
+2) Ajouter la fonction :
+
+    function openScreenShare() {
+      const viewer = document.querySelector('[screen-share-viewer]');
+      if (viewer && viewer.components['screen-share-viewer']) {
+        viewer.components['screen-share-viewer'].open();
+      }
+    }
+
+===== CODE A AJOUTER DANS index.html =====
+
+1) Ajouter le script screen-share.js (avant app.js) :
+
+    <script src="js/screen-share.js"></script>
+
+2) Ajouter le bouton ECRAN PC dans le menu principal (#main-menu) :
+   ATTENTION: positionner le bouton pour ne pas chevaucher les boutons existants !
+
+    <a-entity id="btn-screen-share" class="menu-btn clickable"
+      position="0 -1 0"
+      menu-button="label: Ecran PC; action: screen-share"
+      geometry="primitive: box; width: 1.2; height: 0.6; depth: 0.05"
+      material="color: #1a1a2e; opacity: 0.7"
+    >
+      <a-text value="ECRAN PC" position="0 0 0.03" align="center" color="#ff6600" width="2"></a-text>
+    </a-entity>
+
+3) Ajouter le panneau de controles screen-share (HORS du media-player, entite separee) :
+   IMPORTANT: utiliser une position Z differente du media-player pour eviter les conflits !
+
+    <!-- Panneau Screen Share -->
+    <a-entity id="screen-share-panel" position="0 0.5 -3" visible="false" screen-share-viewer>
+      <a-entity class="clickable"
+        geometry="primitive: plane; width: 1.2; height: 0.35"
+        material="color: #cc0000; opacity: 0.8"
+        position="0 0 0"
+        screen-share-control="action: disconnect"
+      >
+        <a-text value="Deconnecter" align="center" color="#fff" width="2"></a-text>
+      </a-entity>
+    </a-entity>
+
+===== PROBLEME CONNU =====
+
+Le media-player et le screen-share-viewer utilisent tous les deux un "wallScreen"
+(a-plane) pour afficher la video. Il faut s'assurer que quand l'un est actif,
+l'autre est cache. Solutions possibles :
+- Dans openMedia() de media-player.js : cacher le wallScreen du screen-share
+- Dans open() de screen-share.js : cacher le wallScreen du media-player
+- Ou bien fermer proprement l'un avant d'ouvrir l'autre

@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Casque VR - Partage d'ecran</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0d0d1a;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    h1 {
+      color: #00ffff;
+      font-size: 28px;
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+    }
+    .status {
+      padding: 12px 24px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 16px;
+      text-align: center;
+    }
+    .status.waiting { background: #1a1a2e; color: #aaa; }
+    .status.sharing { background: #003300; color: #00ff00; }
+    .status.connected { background: #003300; color: #00ff00; border: 1px solid #00ff00; }
+    .status.error { background: #330000; color: #ff4444; }
+    #btn-share {
+      background: #00ffff;
+      color: #0d0d1a;
+      border: none;
+      padding: 16px 48px;
+      font-size: 20px;
+      font-weight: bold;
+      border-radius: 12px;
+      cursor: pointer;
+      margin-bottom: 20px;
+      transition: all 0.2s;
+    }
+    #btn-share:hover { background: #33ffff; transform: scale(1.05); }
+    #btn-share:disabled { background: #333; color: #666; cursor: not-allowed; transform: none; }
+    #btn-stop {
+      background: #ff4444;
+      color: #fff;
+      border: none;
+      padding: 12px 36px;
+      font-size: 16px;
+      font-weight: bold;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-bottom: 20px;
+      display: none;
+    }
+    #btn-stop:hover { background: #ff6666; }
+    #preview {
+      max-width: 640px;
+      width: 100%;
+      border-radius: 8px;
+      border: 2px solid #1a1a2e;
+      display: none;
+      margin-bottom: 20px;
+    }
+    .instructions {
+      max-width: 500px;
+      text-align: center;
+      color: #888;
+      line-height: 1.6;
+      font-size: 14px;
+    }
+    .instructions strong { color: #00ffff; }
+  </style>
+</head>
+<body>
+  <h1>Partage d'ecran</h1>
+  <p class="subtitle">Casque VR - Screen Mirroring</p>
+
+  <div id="status" class="status waiting">En attente...</div>
+
+  <button id="btn-share">Partager l'ecran</button>
+  <button id="btn-stop">Arreter le partage</button>
+
+  <video id="preview" autoplay muted playsinline></video>
+
+  <div class="instructions">
+    <p>1. Cliquez sur <strong>Partager l'ecran</strong></p>
+    <p>2. Selectionnez l'ecran ou la fenetre a partager</p>
+    <p>3. Sur le casque VR, appuyez sur <strong>ECRAN PC</strong></p>
+    <p style="margin-top:10px;">Cochez <strong>"Partager l'audio de l'onglet/systeme"</strong> pour le son</p>
+  </div>
+
+  <script>
+    // Detecter si on est sur mobile et bloquer
+    var isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isMobile) {
+      document.querySelector('h1').textContent = 'Page reservee au PC';
+      document.querySelector('.subtitle').textContent = '';
+      document.getElementById('status').textContent = 'Cette page doit etre ouverte sur le PC (Brave/Chrome).\nSur le mobile, utilisez le bouton ECRAN PC dans le menu VR.';
+      document.getElementById('status').className = 'status error';
+      document.getElementById('btn-share').style.display = 'none';
+      document.querySelector('.instructions').innerHTML = '<p style="color:#ff4444;font-size:18px">Sur le <strong style="color:#ff4444">mobile en VR</strong> : appuyez sur le bouton <strong style="color:#ff00ff">ECRAN PC</strong> dans le menu principal</p>';
+    }
+
+    var pc = null;
+    var stream = null;
+    var polling = null;
+    var statusEl = document.getElementById('status');
+    var btnShare = document.getElementById('btn-share');
+    var btnStop = document.getElementById('btn-stop');
+    var preview = document.getElementById('preview');
+
+    function setStatus(text, cls) {
+      statusEl.textContent = text;
+      statusEl.className = 'status ' + cls;
+    }
+
+    btnShare.addEventListener('click', startSharing);
+    btnStop.addEventListener('click', stopSharing);
+
+    async function startSharing() {
+      try {
+        // Capturer l'ecran (avec audio si disponible)
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { cursor: 'always', width: { ideal: 1920 }, height: { ideal: 1080 } },
+          audio: true
+        });
+      } catch (e) {
+        // L'utilisateur a annule ou erreur
+        if (e.name === 'NotAllowedError') {
+          setStatus('Partage annule', 'waiting');
+        } else {
+          setStatus('Erreur: ' + e.message, 'error');
+        }
+        return;
+      }
+
+      // Afficher la preview
+      preview.srcObject = stream;
+      preview.style.display = 'block';
+      btnShare.disabled = true;
+      btnStop.style.display = 'inline-block';
+
+      // Detecter l'arret du partage (utilisateur clique "Arreter" dans le navigateur)
+      stream.getVideoTracks()[0].addEventListener('ended', function () {
+        stopSharing();
+      });
+
+      setStatus('Ecran capture. En attente du casque VR...', 'sharing');
+
+      // Reset le signaling
+      await fetch('/api/signal/reset', { method: 'POST' });
+
+      // Creer la connexion WebRTC
+      pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      });
+
+      // Ajouter les tracks
+      stream.getTracks().forEach(function (track) {
+        pc.addTrack(track, stream);
+      });
+
+      // Envoyer les ICE candidates au VR
+      pc.onicecandidate = function (e) {
+        if (e.candidate) {
+          fetch('/api/signal', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target: 'vr', type: 'ice', candidate: e.candidate })
+          });
+        }
+      };
+
+      pc.onconnectionstatechange = function () {
+        if (pc.connectionState === 'connected') {
+          setStatus('Connecte au casque VR !', 'connected');
+        } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+          setStatus('Deconnecte', 'error');
+        }
+      };
+
+      // Creer l'offre
+      var offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      // Envoyer l'offre au serveur
+      await fetch('/api/signal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: 'vr', type: 'offer', sdp: offer.sdp })
+      });
+
+      // Poller pour la reponse du VR
+      polling = setInterval(pollForMessages, 500);
+    }
+
+    async function pollForMessages() {
+      try {
+        var res = await fetch('/api/signal?role=pc');
+        var messages = await res.json();
+
+        for (var i = 0; i < messages.length; i++) {
+          var msg = messages[i];
+
+          if (msg.type === 'answer' && pc) {
+            await pc.setRemoteDescription(new RTCSessionDescription({
+              type: 'answer',
+              sdp: msg.sdp
+            }));
+          } else if (msg.type === 'ice' && pc) {
+            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+          }
+        }
+      } catch (e) {
+        // Erreur de polling, on continue
+      }
+    }
+
+    function stopSharing() {
+      if (polling) {
+        clearInterval(polling);
+        polling = null;
+      }
+      if (pc) {
+        pc.close();
+        pc = null;
+      }
+      if (stream) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        stream = null;
+      }
+      preview.style.display = 'none';
+      preview.srcObject = null;
+      btnShare.disabled = false;
+      btnStop.style.display = 'none';
+      setStatus('Partage arrete', 'waiting');
+
+      // Notifier le VR
+      fetch('/api/signal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: 'vr', type: 'stop' })
+      }).catch(function () {});
+    }
+  </script>
+</body>
+</html>

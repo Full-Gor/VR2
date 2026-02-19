@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>VR2 - Home Theater</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/aframe-event-set-component@5.0.0/dist/aframe-event-set-component.min.js"></script>
+</head>
+<body>
+  <!-- Debug overlay -->
+  <div id="debug-log" style="position:fixed;top:0;left:0;width:100%;max-height:40%;overflow-y:auto;background:rgba(0,0,0,0.85);color:#0f0;font:12px monospace;padding:8px;z-index:99999;pointer-events:none;"></div>
+  <script>
+    var dbg = document.getElementById('debug-log');
+    function dlog(msg, color) {
+      var d = document.createElement('div');
+      d.style.color = color || '#0f0';
+      d.textContent = new Date().toLocaleTimeString() + ' ' + msg;
+      dbg.appendChild(d);
+      dbg.scrollTop = dbg.scrollHeight;
+    }
+    window.onerror = function(msg, src, line) {
+      dlog('ERROR: ' + msg + ' (' + (src||'').split('/').pop() + ':' + line + ')', '#ff4444');
+    };
+    window.addEventListener('unhandledrejection', function(e) {
+      dlog('REJECT: ' + (e.reason && e.reason.message || e.reason), '#ff8800');
+    });
+    dlog('Page chargee...');
+    window.addEventListener('load', function() {
+      setTimeout(function() {
+        if (dbg && !dbg.querySelector('[style*="ff4444"]') && !dbg.querySelector('[style*="ff8800"]')) {
+          dbg.style.display = 'none';
+        }
+      }, 5000);
+    });
+  </script>
+
+  <a-scene
+    vr-mode-ui="enabled: false"
+    renderer="antialias: true; colorManagement: true"
+    cursor-manager
+    gyro-fallback
+    cardboard-stereo
+    auto-recenter
+    ambient-manager
+  >
+    <a-assets timeout="10000">
+      <img id="icon-files" src="assets/icons/files.svg">
+      <video id="vid-tonnerre" src="videos/tonnerre-4k.mp4" loop crossorigin="anonymous" playsinline webkit-playsinline preload="auto"></video>
+      <video id="vid-plage" src="videos/plage-4k.mp4" loop crossorigin="anonymous" playsinline webkit-playsinline preload="auto"></video>
+      <video id="vid-nebuleuse" src="videos/nebuleuse-4k.mp4" loop crossorigin="anonymous" playsinline webkit-playsinline preload="auto"></video>
+    </a-assets>
+
+    <!-- Environnement -->
+    <a-sky color="#000000"></a-sky>
+    <a-plane position="0 0 0" rotation="-90 0 0" width="20" height="20" material="color: #000; shader: flat"></a-plane>
+
+    <!-- ===== 3 ECRANS AMBIENT ===== -->
+    <!-- Ecran 1 : Gauche (eclairs) -->
+    <a-entity id="screen-1" position="-8 3.5 0" rotation="0 90 0">
+      <a-video src="#vid-tonnerre" width="10" height="5.6" material="shader: flat"></a-video>
+    </a-entity>
+
+    <!-- Ecran 2 : Face (plage) -->
+    <a-entity id="screen-2" position="0 3.5 -8">
+      <a-video src="#vid-plage" width="10" height="5.6" material="shader: flat"></a-video>
+    </a-entity>
+
+    <!-- Ecran 3 : Droite (nebuleuse) -->
+    <a-entity id="screen-3" position="8 3.5 0" rotation="0 -90 0">
+      <a-video src="#vid-nebuleuse" width="10" height="5.6" material="shader: flat"></a-video>
+    </a-entity>
+
+    <!-- Bouton FAB sur le mur droit (sous l'ecran 3) -->
+    <a-entity id="fab-3d-btn" class="clickable"
+      position="8 1 0" rotation="0 -90 0"
+      geometry="primitive: box; width: 0.8; height: 0.8; depth: 0.05"
+      material="color: #6c5ce7; opacity: 0.9"
+      fab-button
+      animation__mouseenter="property: scale; to: 1.15 1.15 1.15; dur: 200; startEvents: mouseenter"
+      animation__mouseleave="property: scale; to: 1 1 1; dur: 200; startEvents: mouseleave"
+    >
+      <a-text value="FAB" align="center" color="#fff" width="3" position="0 0.15 0.03"></a-text>
+      <a-text value="Menu" align="center" color="#a29bfe" width="2" position="0 -0.15 0.03"></a-text>
+    </a-entity>
+
+    <!-- ===== 3 BOUTONS TOGGLE face a l'utilisateur ===== -->
+    <a-entity id="toggle-buttons" position="0 1.2 -3.5">
+      <!-- Bouton 1 : toggle ecran gauche (eclairs) -->
+      <a-entity id="toggle-1" class="clickable"
+        position="-0.8 0 0"
+        geometry="primitive: box; width: 0.5; height: 0.5; depth: 0.05"
+        material="color: #00aa44; opacity: 0.9"
+        toggle-screen="screen: screen-1; video: vid-tonnerre; label: 1"
+        animation__mouseenter="property: scale; to: 1.15 1.15 1.15; dur: 200; startEvents: mouseenter"
+        animation__mouseleave="property: scale; to: 1 1 1; dur: 200; startEvents: mouseleave"
+      >
+        <a-text value="1" align="center" color="#fff" width="3" position="0 0 0.03"></a-text>
+      </a-entity>
+
+      <!-- Bouton 2 : toggle ecran face (plage) -->
+      <a-entity id="toggle-2" class="clickable"
+        position="0 0 0"
+        geometry="primitive: box; width: 0.5; height: 0.5; depth: 0.05"
+        toggle-screen="screen: screen-2; video: vid-plage; label: 2"
+        material="color: #00aa44; opacity: 0.9"
+        animation__mouseenter="property: scale; to: 1.15 1.15 1.15; dur: 200; startEvents: mouseenter"
+        animation__mouseleave="property: scale; to: 1 1 1; dur: 200; startEvents: mouseleave"
+      >
+        <a-text value="2" align="center" color="#fff" width="3" position="0 0 0.03"></a-text>
+      </a-entity>
+
+      <!-- Bouton 3 : toggle ecran droite (nebuleuse) -->
+      <a-entity id="toggle-3" class="clickable"
+        position="0.8 0 0"
+        geometry="primitive: box; width: 0.5; height: 0.5; depth: 0.05"
+        toggle-screen="screen: screen-3; video: vid-nebuleuse; label: 3"
+        material="color: #00aa44; opacity: 0.9"
+        animation__mouseenter="property: scale; to: 1.15 1.15 1.15; dur: 200; startEvents: mouseenter"
+        animation__mouseleave="property: scale; to: 1 1 1; dur: 200; startEvents: mouseleave"
+      >
+        <a-text value="3" align="center" color="#fff" width="3" position="0 0 0.03"></a-text>
+      </a-entity>
+    </a-entity>
+
+    <!-- ===== MENU PRINCIPAL ===== -->
+    <a-entity id="main-menu" position="0 1.6 -3">
+      <a-text value="VR2" position="0 1.2 0" align="center" color="#00ffff" font="monoid" width="6" shader="msdf"></a-text>
+      <a-text value="Home Theater" position="0 0.9 0" align="center" color="#666" width="3"></a-text>
+
+      <!-- Seul bouton : Fichiers -->
+      <a-entity id="btn-files" class="menu-btn clickable"
+        position="0 0.2 0"
+        menu-button="label: Fichiers; icon: #icon-files; action: files"
+        geometry="primitive: box; width: 1.2; height: 1.2; depth: 0.05"
+        material="color: #1a1a2e; opacity: 0.7"
+        animation__mouseenter="property: scale; to: 1.1 1.1 1.1; dur: 200; startEvents: mouseenter"
+        animation__mouseleave="property: scale; to: 1 1 1; dur: 200; startEvents: mouseleave"
+      >
+        <a-image src="#icon-files" position="0 0.15 0.03" width="0.5" height="0.5"></a-image>
+        <a-text value="Fichiers" position="0 -0.35 0.03" align="center" color="#00ffff" width="2"></a-text>
+      </a-entity>
+    </a-entity>
+
+    <!-- ===== EXPLORATEUR DE FICHIERS ===== -->
+    <a-entity id="file-explorer" position="0 1.6 -3" visible="false" file-explorer>
+      <a-plane width="4.2" height="3.8" material="color: #0d0d1a; opacity: 0.95" position="0 -0.2 -0.01"></a-plane>
+      <a-plane width="4.2" height="0.3" position="0 1.5 0" material="color: #1a1a3e"></a-plane>
+      <a-text id="file-path-display" value="/ Home" position="-1.9 1.5 0.01" color="#00ffff" width="2.5"></a-text>
+      <a-entity class="clickable" id="file-back-btn"
+        geometry="primitive: plane; width: 0.5; height: 0.3"
+        material="color: #333"
+        position="1.3 1.5 0.01"
+        file-nav="action: back"
+      >
+        <a-text value="< Retour" align="center" color="#fff" width="2"></a-text>
+      </a-entity>
+      <a-entity class="clickable" id="file-close-btn"
+        geometry="primitive: plane; width: 0.5; height: 0.3"
+        material="color: #cc0000"
+        position="1.85 1.5 0.01"
+        file-nav="action: close"
+      >
+        <a-text value="X" align="center" color="#fff" width="3"></a-text>
+      </a-entity>
+      <a-entity id="file-list" position="0 1.1 0.01"></a-entity>
+    </a-entity>
+
+    <!-- ===== MEDIA PLAYER (invisible, juste le composant) ===== -->
+    <a-entity id="media-player" position="0 -9999 0" visible="false" media-player></a-entity>
+
+    <!-- ===== RETICULE GAZE ===== -->
+    <a-entity id="camera-rig">
+      <a-camera position="0 1.6 0" look-controls="pointerLockEnabled: false">
+        <a-entity
+          id="gaze-cursor"
+          cursor="fuse: false; fuseTimeout: 1500"
+          raycaster="objects: .clickable; far: 15"
+          position="0 0 -1"
+          geometry="primitive: ring; radiusInner: 0.015; radiusOuter: 0.025"
+          material="color: #00ffff; shader: flat; opacity: 0.9"
+          animation__fusing="property: scale; from: 1 1 1; to: 0.7 0.7 0.7; dur: 1500; startEvents: fusing"
+          animation__leave="property: scale; from: 0.7 0.7 0.7; to: 1 1 1; dur: 300; startEvents: mouseleave"
+          gaze-feedback
+        >
+          <a-entity
+            id="fuse-progress"
+            geometry="primitive: ring; radiusInner: 0.028; radiusOuter: 0.038; thetaLength: 0"
+            material="color: #00ff00; shader: flat; opacity: 0.8"
+            fuse-progress
+          ></a-entity>
+        </a-entity>
+      </a-camera>
+    </a-entity>
+
+    <!-- Bouton recentrage VR -->
+    <a-entity id="recenter-btn" class="clickable" visible="false"
+      position="0 -0.2 -3"
+      recenter-button
+    >
+      <a-plane width="0.9" height="0.35" material="color: #1a1a2e; opacity: 0.9; shader: flat"></a-plane>
+      <a-text id="recenter-label" value="RECENTRER" align="center" color="#00ffff" width="1.8" position="0 0 0.01"></a-text>
+      <a-plane id="recenter-progress" width="0" height="0.03" position="0 -0.18 0.01"
+        material="color: #00ff00; shader: flat; opacity: 0.8"
+      ></a-plane>
+    </a-entity>
+  </a-scene>
+
+  <!-- Bouton FAB (sidebar droite ChatApp2) -->
+  <button id="fab-trigger-btn" onclick="window.fabMenu && window.fabMenu.open()">⭐</button>
+
+  <!-- Bouton MODE VR -->
+  <button id="vr-stereo-btn">MODE VR</button>
+  <div id="stereo-divider"></div>
+
+  <!-- Barre de controles film (cachee par defaut) -->
+  <div id="film-controls" style="display:none;">
+    <button id="btn-play" class="film-btn">&#9654; Play</button>
+    <button id="btn-pause" class="film-btn">&#10074;&#10074; Pause</button>
+    <button id="btn-mute" class="film-btn">&#128264; Mute</button>
+    <button id="btn-stop" class="film-btn film-btn-stop">&#9632; Stop</button>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/cardboard.js?v=1"></script>
+  <script src="js/components.js?v=1"></script>
+  <script src="js/file-explorer.js?v=1"></script>
+  <script src="js/media-player.js?v=1"></script>
+  <script src="js/fab-menu.js?v=1"></script>
+  <script src="js/app.js?v=1"></script>
+</body>
+</html>
