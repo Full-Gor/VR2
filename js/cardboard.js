@@ -21,6 +21,7 @@ AFRAME.registerComponent('cardboard-stereo', {
 
   enterStereo: function (btn, divider) {
     this.stereoActive = true;
+    this._arWasActive = !!(window.arMode && window.arMode.isActive());
     btn.textContent = 'QUITTER VR';
     btn.classList.add('active');
     divider.style.display = 'block';
@@ -34,14 +35,12 @@ AFRAME.registerComponent('cardboard-stereo', {
     this.requestGyroPermission();
 
     // IMPORTANT: Forcer la réactivation du gyroscope pour le mode VR cardboard
-    // Le gyro-fallback peut l'avoir désactivé, mais en VR on en a besoin
     var camera = document.querySelector('a-camera');
     if (camera) {
       camera.setAttribute('look-controls', 'magicWindowTrackingEnabled', true);
     }
 
     // Vérifier après un court délai si le gyroscope fonctionne vraiment
-    // Si non (HTTP sans HTTPS), prévenir l'utilisateur
     this._gyroCheckTimeout = setTimeout(() => {
       this._vrGyroWorking = false;
       var checkHandler = (e) => {
@@ -56,7 +55,6 @@ AFRAME.registerComponent('cardboard-stereo', {
         window.removeEventListener('deviceorientation', checkHandler);
         if (!this._vrGyroWorking && this.stereoActive) {
           console.warn('VR Cardboard: gyroscope non detecte ! Utilisez HTTPS (port 9443) pour le gyroscope.');
-          // Afficher un avertissement temporaire
           var warn = document.createElement('div');
           warn.id = 'vr-gyro-warning';
           warn.style.cssText = 'position:fixed;bottom:10%;left:50%;transform:translateX(-50%);background:rgba(255,100,0,0.9);color:#fff;padding:15px 25px;border-radius:10px;font:bold 16px sans-serif;z-index:100000;text-align:center;pointer-events:none;';
@@ -75,8 +73,13 @@ AFRAME.registerComponent('cardboard-stereo', {
       screen.orientation.lock('landscape').catch(() => {});
     }
 
-    // Cacher le bouton en mode VR (triple-tap pour quitter)
+    // Cacher les boutons UI (triple-tap pour quitter)
     btn.style.display = 'none';
+    var arBtn = document.getElementById('ar-btn');
+    if (arBtn) arBtn.style.display = 'none';
+    var fabTrigger = document.getElementById('fab-trigger-btn');
+    if (fabTrigger) fabTrigger.style.display = 'none';
+
     this._tapCount = 0;
     this._tapTimer = null;
     this._onTripleTap = (e) => {
@@ -99,27 +102,32 @@ AFRAME.registerComponent('cardboard-stereo', {
     };
     window.addEventListener('resize', this._onResize);
 
-    // Si AR est actif, garder la transparence du renderer
-    if (window.arMode && window.arMode.isActive()) {
+    // Si AR est actif, garder la transparence du renderer ET la caméra visible
+    if (this._arWasActive) {
       this.renderer.setClearColor(0x000000, 0);
       this.renderer.setClearAlpha(0);
+      // S'assurer que le feed caméra AR reste visible derrière le canvas
+      var arFeed = document.getElementById('ar-camera-feed');
+      if (arFeed) arFeed.style.display = 'block';
+      // Garder sky/sol cachés
+      var sky = document.querySelector('a-sky');
+      if (sky) sky.setAttribute('visible', false);
+      var floor = document.querySelector('a-scene > a-plane');
+      if (floor) floor.setAttribute('visible', false);
     }
 
     // Désactiver WebXR natif d'A-Frame
     this.el.renderer.xr.enabled = false;
 
     // Intercepter le rendu d'A-Frame : bloquer le rendu mono
-    // Le rendu stéréo est fait dans tick() via StereoEffect
     this._originalRender = this.el.renderer.render.bind(this.el.renderer);
     this._skipNormalRender = true;
     const self = this;
     const origRender = this._originalRender;
     this.el.renderer.render = function (scene, camera) {
-      // Laisser passer uniquement les appels du StereoEffect
       if (self._skipNormalRender && self._renderingFromStereo) {
         origRender(scene, camera);
       }
-      // Sinon on bloque (le rendu mono d'A-Frame)
     };
 
     // Signaler l'entrée en mode VR
@@ -143,6 +151,12 @@ AFRAME.registerComponent('cardboard-stereo', {
     this.effect = null;
     btn.style.display = 'block';
 
+    // Restaurer les boutons UI
+    var arBtn = document.getElementById('ar-btn');
+    if (arBtn) arBtn.style.display = 'block';
+    var fabTrigger = document.getElementById('fab-trigger-btn');
+    if (fabTrigger) fabTrigger.style.display = 'flex';
+
     // Restaurer le render normal d'A-Frame
     this._skipNormalRender = false;
     this._renderingFromStereo = false;
@@ -158,10 +172,20 @@ AFRAME.registerComponent('cardboard-stereo', {
     // Restaurer la taille du renderer
     this.renderer.setSize(window.innerWidth, window.innerHeight);
 
-    // Si AR est toujours actif, garder la transparence
-    if (window.arMode && window.arMode.isActive()) {
+    // Si AR était actif avant le VR, restaurer la transparence
+    if (this._arWasActive && window.arMode && window.arMode.isActive()) {
       this.renderer.setClearColor(0x000000, 0);
       this.renderer.setClearAlpha(0);
+      // Garder sky/sol cachés
+      var sky = document.querySelector('a-sky');
+      if (sky) sky.setAttribute('visible', false);
+      var floor = document.querySelector('a-scene > a-plane');
+      if (floor) floor.setAttribute('visible', false);
+      // Mettre à jour le bouton AR
+      if (arBtn) {
+        arBtn.textContent = 'QUITTER AR';
+        arBtn.classList.add('active');
+      }
     }
 
     // Quitter le plein écran
@@ -179,7 +203,6 @@ AFRAME.registerComponent('cardboard-stereo', {
     }
 
     // Restaurer le gyro-fallback si le gyroscope ne marchait pas
-    // (remettre magicWindowTrackingEnabled: false pour les contrôles tactiles)
     var gyroFallback = this.el.components['gyro-fallback'];
     if (gyroFallback && !gyroFallback.gyroWorking) {
       var camera = document.querySelector('a-camera');
@@ -196,6 +219,8 @@ AFRAME.registerComponent('cardboard-stereo', {
     // Retirer l'avertissement gyro si présent
     var warn = document.getElementById('vr-gyro-warning');
     if (warn) warn.parentNode.removeChild(warn);
+
+    this._arWasActive = false;
 
     // Signaler la sortie du mode VR
     this.el.emit('vr-mode-exit');
